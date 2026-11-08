@@ -44,6 +44,72 @@ jobs:
       - name: Sync Android Project
         run: npx cap sync android
 
+      - name: Configure Android camera permission and back handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          tree = ET.parse(manifest)
+          root = tree.getroot()
+          android = "{http://schemas.android.com/apk/res/android}"
+          if not any(x.tag == "uses-permission" and x.get(android+"name") == "android.permission.CAMERA" for x in root):
+              node = ET.Element("uses-permission")
+              node.set(android+"name", "android.permission.CAMERA")
+              root.insert(0, node)
+          if not any(x.tag == "uses-feature" and x.get(android+"name") == "android.hardware.camera" for x in root):
+              node = ET.Element("uses-feature")
+              node.set(android+"name", "android.hardware.camera")
+              node.set(android+"required", "false")
+              root.insert(1, node)
+          tree.write(manifest, encoding="utf-8", xml_declaration=True)
+          activity = Path("android/app/src/main/java/com/kk/scanner/MainActivity.java")
+          source = activity.read_text()
+          if "KK Android permissions and back navigation" not in source:
+              source = source.replace(
+                  "import com.getcapacitor.BridgeActivity;",
+                  """import com.getcapacitor.BridgeActivity;
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import androidx.core.app.ActivityCompat;
+          import androidx.core.content.ContextCompat;"""
+              )
+              source = source.replace(
+                  "public class MainActivity extends BridgeActivity {",
+                  """public class MainActivity extends BridgeActivity {
+              // KK Android permissions and back navigation
+              private static final int KK_CAMERA_PERMISSION = 7314;
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                      ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, KK_CAMERA_PERMISSION);
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (bridge == null || bridge.getWebView() == null) {
+                      super.onBackPressed();
+                      return;
+                  }
+                  bridge.getWebView().evaluateJavascript(
+                      "window.__kkAndroidBack ? window.__kkAndroidBack() : false",
+                      value -> {
+                          if (!"true".equals(value)) {
+                              MainActivity.super.onBackPressed();
+                          }
+                      }
+                  );
+              }"""
+              )
+              activity.write_text(source)
+          PY
+
       - name: Build Debug APK
         run: |
           cd android

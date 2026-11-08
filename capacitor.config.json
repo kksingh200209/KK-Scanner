@@ -1,0 +1,9 @@
+{
+  "appId": "com.kk.scanner",
+  "appName": "KK Scanner",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
